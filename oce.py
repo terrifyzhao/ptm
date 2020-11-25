@@ -7,7 +7,14 @@ import pandas as pd
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from transformers import BertForSequenceClassification, AdamW
+from model import BertForMultiTask
 import os
+
+GPU_NUM = 1
+
+device = torch.device(f'cuda:{GPU_NUM}') if torch.cuda.is_available() else torch.device('cpu')
+
+os.environ["CUDA_VISIBLE_DEVICES"] = f'{GPU_NUM}'
 
 
 def read_oce_data():
@@ -65,22 +72,21 @@ class Dataset(torch.utils.data.Dataset):
 train_dataset = Dataset(train_encodings, oce_train_label)
 valid_dataset = Dataset(valid_encodings, oce_valid_label)
 
-device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-
 if os.path.exists('best_model.p'):
     print('************load model************')
     model = torch.load('best_model.p')
 else:
-    model = BertForSequenceClassification.from_pretrained('./bert', num_labels=7)
+    model = BertForMultiTask.from_pretrained('./bert', num_labels1=7, num_labels2=15, num_labels3=3)
     model.to(device)
 model.train()
 
-BATCH_SIZE = 240
+BATCH_SIZE = 250
 
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE)
 valid_loader = DataLoader(valid_dataset, batch_size=BATCH_SIZE)
 
-optim = AdamW(model.parameters(), lr=5e-5)
+optim = AdamW(model.parameters(), lr=2e-5)
+scheduler = torch.optim.lr_scheduler.ExponentialLR(optim, gamma=0.95)
 
 
 def train_func():
@@ -92,7 +98,7 @@ def train_func():
         input_ids = batch['input_ids'].to(device)
         attention_mask = batch['attention_mask'].to(device)
         labels = batch['labels'].to(device)
-        loss, outputs = model(input_ids, attention_mask=attention_mask, labels=labels)
+        loss, outputs, _, _ = model(input_ids, attention_mask=attention_mask, labels=labels, task='oce')
         train_loss += loss.item()
         loss.backward()
         optim.step()
@@ -113,7 +119,7 @@ def test_func():
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attention_mask'].to(device)
             labels = batch['labels'].to(device)
-            loss, outputs = model(input_ids, attention_mask=attention_mask, labels=labels)
+            loss, outputs, _, _ = model(input_ids, attention_mask=attention_mask, labels=labels, task='oce')
             valid_loss += loss.item()
             valid_f1 += f1_score(labels.cpu().numpy(), outputs.argmax(dim=1).cpu().numpy(), average='macro')
 
@@ -124,6 +130,7 @@ min_valid_loss = float('inf')
 for epoch in range(100):
     print('************start train************')
     train_loss, train_f1 = train_func()
+    scheduler.step()
     print('************start valid************')
     valid_loss, valid_f1 = test_func()
     print(f'valid loss: {valid_loss:.4f}, valid_f1: {valid_f1:.4f}')
