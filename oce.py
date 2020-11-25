@@ -19,7 +19,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = f'{GPU_NUM}'
 
 def read_oce_data():
     df = pd.read_csv('data/OCEMOTION_train.csv', sep='\t')
-    train, valid = train_test_split(df, test_size=0.2, random_state=1000)
+    train, valid = train_test_split(df, test_size=0.1, random_state=1000)
 
     train_question = train.iloc[:, 1].values
     train_label = train.iloc[:, 2].values
@@ -50,7 +50,7 @@ print(np.mean(sentence_len))
 print(np.percentile(sentence_len, 80))
 print(np.percentile(sentence_len, 90))
 
-tokenizer = BertTokenizer.from_pretrained('./bert', model_max_length=50)
+tokenizer = BertTokenizer.from_pretrained('./robert', model_max_length=80)
 train_encodings = tokenizer(oce_train_question.tolist(), return_tensors='pt', truncation=True, padding=True)
 valid_encodings = tokenizer(oce_valid_question.tolist(), return_tensors='pt', truncation=True, padding=True)
 
@@ -76,11 +76,11 @@ if os.path.exists('best_model.p'):
     print('************load model************')
     model = torch.load('best_model.p')
 else:
-    model = BertForMultiTask.from_pretrained('./bert', num_labels1=7, num_labels2=15, num_labels3=3)
+    model = BertForMultiTask.from_pretrained('./robert', num_labels1=7, num_labels2=15, num_labels3=3)
     model.to(device)
 model.train()
 
-BATCH_SIZE = 250
+BATCH_SIZE = 140
 
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE)
 valid_loader = DataLoader(valid_dataset, batch_size=BATCH_SIZE)
@@ -128,14 +128,18 @@ def test_func():
 
 min_valid_loss = float('inf')
 for epoch in range(100):
-    print('************start train************')
+    print(f'************epoch {epoch}************')
+    print('start train')
     train_loss, train_f1 = train_func()
+    print(f'train loss: {train_loss:.4f}, train f1: {train_f1:.4f}')
     scheduler.step()
-    print('************start valid************')
+    print('start valid')
     valid_loss, valid_f1 = test_func()
-    print(f'valid loss: {valid_loss:.4f}, valid_f1: {valid_f1:.4f}')
+    print(f'valid loss: {valid_loss:.4f}, valid f1: {valid_f1:.4f}')
 
     if min_valid_loss > valid_loss:
         min_valid_loss = valid_loss
         torch.save(model, 'best_model.p')
         print('save model done')
+
+    print('')

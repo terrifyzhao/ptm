@@ -117,7 +117,7 @@ class BertForMultiTask(BertPreTrainedModel):
         loss_fct = nn.CrossEntropyLoss()
 
         if task == 'oce':
-            loss_fct = FocalLoss(logits=True)
+            # loss_fct = FocalLoss(logits=True)
             loss = loss_fct(logits1.view(-1, self.num_labels1), labels.view(-1))
             return loss, logits1, self.bert, self.classifier1
         elif task == 'news':
