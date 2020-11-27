@@ -7,8 +7,9 @@ import pandas as pd
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from transformers import AdamW
-from model import BertForMultiTask, BertForMultiTaskWithWeight
+from model2 import BertForMultiTask, BertForMultiTaskWithWeight
 import os
+import torch.nn as nn
 
 GPU_NUM = 0
 
@@ -59,13 +60,13 @@ oce_train_question, oce_train_label, oce_valid_question, oce_valid_label = read_
 news_train_question, news_train_label, news_valid_question, news_valid_label = read_news_data()
 oc_train_question1, oc_train_question2, oc_train_label, oc_valid_question1, oc_valid_question2, oc_valid_label = read_oc_data()
 
-sentence_len = []
-for q1, q2 in zip(oc_train_question1, oc_train_question2):
-    l = len(q1) + len(q2)
-    sentence_len.append(l)
-print(np.mean(sentence_len))
-print(np.percentile(sentence_len, 80))
-print(np.percentile(sentence_len, 90))
+# sentence_len = []
+# for q1, q2 in zip(oc_train_question1, oc_train_question2):
+#     l = len(q1) + len(q2)
+#     sentence_len.append(l)
+# print(np.mean(sentence_len))
+# print(np.percentile(sentence_len, 80))
+# print(np.percentile(sentence_len, 90))
 
 oce_dic = {'like': 0, 'happiness': 1, 'disgust': 2, 'sadness': 3, 'anger': 4, 'surprise': 5, 'fear': 6}
 news_dic = {108: 0, 102: 1, 104: 2, 107: 3, 113: 4, 116: 5, 110: 6, 115: 7, 101: 8, 109: 9, 100: 10, 103: 11, 112: 12,
@@ -142,23 +143,25 @@ oc_train_loader = DataLoader(oc_train_dataset, batch_size=OC_BATCH_SIZE)
 oc_valid_loader = DataLoader(oc_valid_dataset, batch_size=OC_BATCH_SIZE)
 
 optim = AdamW(model.parameters(), lr=5e-5)
+loss_fct = nn.CrossEntropyLoss()
 
 
-def train_func(train_loader, task):
+def train_func(task):
     train_loss = 0
     train_f1 = 0
-    pbar = tqdm(train_loader)
-    for batch in pbar:
-        optim.zero_grad()
-        input_ids = batch['input_ids'].to(device)
-        attention_mask = batch['attention_mask'].to(device)
-        labels = batch['labels'].to(device)
-        loss, outputs, bert, fc = model(input_ids, attention_mask=attention_mask, labels=labels, task=task)
-        train_loss += loss.item()
-        loss.backward()
-        optim.step()
-        f1 = f1_score(labels.cpu().numpy(), outputs.argmax(dim=1).cpu().numpy(), average='macro')
-        train_f1 += f1
+    pbar = tqdm(oce_train_loader, news_train_loader, oc_train_loader)
+    for batches in pbar:
+        for batch in batches:
+            optim.zero_grad()
+            input_ids = batch['input_ids'].to(device)
+            attention_mask = batch['attention_mask'].to(device)
+            labels = batch['labels'].to(device)
+            loss, outputs, bert, fc = model(input_ids, attention_mask=attention_mask, labels=labels, task=task)
+            train_loss += loss.item()
+            loss.backward()
+            optim.step()
+            f1 = f1_score(labels.cpu().numpy(), outputs.argmax(dim=1).cpu().numpy(), average='macro')
+            train_f1 += f1
 
         pbar.update()
         pbar.set_description(f'train loss:{loss.item()}, train f1:{f1}')
