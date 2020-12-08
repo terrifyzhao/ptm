@@ -114,7 +114,7 @@ class BertForMultiTask(BertPreTrainedModel):
         logits2 = self.classifier2(pooled_output)
         logits3 = self.classifier3(pooled_output)
 
-
+        # return logits1, logits2, logits3, self.bert, self.classifier1, self.classifier2, self.classifier3
 
         if task == 'oce':
             # loss_fct = FocalLoss(logits=True)

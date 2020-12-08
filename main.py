@@ -18,7 +18,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = f'{GPU_NUM}'
 
 
 def read_oce_data():
-    df = pd.read_csv('data/OCEMOTION_train.csv', sep='\t', header=None)
+    df = pd.read_csv('data/OCEMOTION_train1128.csv', sep='\t', header=None)[0:10]
     train, valid = train_test_split(df, test_size=0.1, random_state=1000)
 
     train_question = train.iloc[:, 1].values
@@ -30,7 +30,7 @@ def read_oce_data():
 
 
 def read_news_data():
-    df = pd.read_csv('data/TNEWS_train.csv', sep='\t', header=None)
+    df = pd.read_csv('data/TNEWS_train1128.csv', sep='\t', header=None)[0:1000]
     train, valid = train_test_split(df, test_size=0.1, random_state=1000)
 
     train_question = train.iloc[:, 1].values
@@ -42,7 +42,7 @@ def read_news_data():
 
 
 def read_oc_data():
-    df = pd.read_csv('data/OCNLI_train.csv', sep='\t', header=None)
+    df = pd.read_csv('data/OCNLI_train1128.csv', sep='\t', header=None)[0:1000]
     train, valid = train_test_split(df, test_size=0.1, random_state=1000)
 
     train_question1 = train.iloc[:, 1].values
@@ -126,9 +126,9 @@ else:
     model.to(device)
 model.train()
 
-OCE_BATCH_SIZE = 130
+OCE_BATCH_SIZE = 5
 # OCE_BATCH_SIZE = 2
-oce_train_loader = DataLoader(oce_train_dataset, batch_size=OCE_BATCH_SIZE)
+oce_train_loader = DataLoader(oce_train_dataset, batch_size=OCE_BATCH_SIZE, persistent_workers=True)
 oce_valid_loader = DataLoader(oce_valid_dataset, batch_size=OCE_BATCH_SIZE)
 
 NEWS_BATCH_SIZE = 200
@@ -140,6 +140,17 @@ OC_BATCH_SIZE = 200
 # OC_BATCH_SIZE = 2
 oc_train_loader = DataLoader(oc_train_dataset, batch_size=OC_BATCH_SIZE)
 oc_valid_loader = DataLoader(oc_valid_dataset, batch_size=OC_BATCH_SIZE)
+
+it = iter(oce_train_loader)
+print(it.next())
+print('')
+print(it.next())
+print('')
+print(it.next())
+print('')
+print(it.next())
+print('')
+exit()
 
 optim = AdamW(model.parameters(), lr=5e-5)
 
