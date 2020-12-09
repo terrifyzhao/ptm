@@ -11,10 +11,11 @@ class BertForMultiTaskWithWeight(nn.Module):
         self.num_labels2 = num_labels2
         self.num_labels3 = num_labels3
 
-        self.bert = torch.load('bert.p', map_location=device)
-        self.classifier1 = torch.load('fc1.p', map_location=device)
-        self.classifier2 = torch.load('fc2.p', map_location=device)
-        self.classifier3 = torch.load('fc3.p', map_location=device)
+        model = torch.load('bert.p', map_location=device)
+        self.bert = model[0]
+        self.classifier1 = model[1]
+        self.classifier2 = model[2]
+        self.classifier3 = model[3]
 
         self.dropout = nn.Dropout(0.1)
 
@@ -56,17 +57,12 @@ class BertForMultiTaskWithWeight(nn.Module):
             elif task == 'oc':
                 return logits3
 
-        loss_fct = nn.CrossEntropyLoss()
-
         if task == 'oce':
-            loss = loss_fct(logits1.view(-1, self.num_labels1), labels.view(-1))
-            return loss, logits1, self.bert, self.classifier1
+            return logits1, self.bert, self.classifier1
         elif task == 'news':
-            loss = loss_fct(logits2.view(-1, self.num_labels2), labels.view(-1))
-            return loss, logits2, self.bert, self.classifier2
+            return logits2, self.bert, self.classifier2
         elif task == 'oc':
-            loss = loss_fct(logits3.view(-1, self.num_labels3), labels.view(-1))
-            return loss, logits3, self.bert, self.classifier3
+            return logits3, self.bert, self.classifier3
 
 
 class BertForMultiTask(BertPreTrainedModel):
@@ -114,17 +110,11 @@ class BertForMultiTask(BertPreTrainedModel):
         logits2 = self.classifier2(pooled_output)
         logits3 = self.classifier3(pooled_output)
 
-        # return logits1, logits2, logits3, self.bert, self.classifier1, self.classifier2, self.classifier3
-
         if task == 'oce':
-            # loss_fct = FocalLoss(logits=True)
-            # loss = loss_fct(logits1.view(-1, self.num_labels1), labels.view(-1))
             return logits1, self.bert, self.classifier1
         elif task == 'news':
-            # loss = loss_fct(logits2.view(-1, self.num_labels2), labels.view(-1))
             return logits2, self.bert, self.classifier2
         elif task == 'oc':
-            # loss = loss_fct(logits3.view(-1, self.num_labels3), labels.view(-1))
             return logits3, self.bert, self.classifier3
 
 

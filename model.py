@@ -11,10 +11,12 @@ class BertForMultiTaskWithWeight(nn.Module):
         self.num_labels2 = num_labels2
         self.num_labels3 = num_labels3
 
-        self.bert = torch.load('bert.p', map_location=device)
-        self.classifier1 = torch.load('fc1.p', map_location=device)
-        self.classifier2 = torch.load('fc2.p', map_location=device)
-        self.classifier3 = torch.load('fc3.p', map_location=device)
+        model = torch.load('bert.p', map_location=device)
+
+        self.bert = model[0]
+        self.classifier1 = model[1]
+        self.classifier2 = model[2]
+        self.classifier3 = model[3]
 
         self.dropout = nn.Dropout(0.1)
 

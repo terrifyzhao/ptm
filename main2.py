@@ -17,8 +17,8 @@ device = torch.device(f'cuda:{GPU_NUM}') if torch.cuda.is_available() else torch
 
 os.environ["CUDA_VISIBLE_DEVICES"] = f'{GPU_NUM}'
 
-size = 100
-BATCH_SIZE = 10
+size = 200000
+BATCH_SIZE = 200
 
 
 def read_oce_data():
@@ -116,6 +116,19 @@ def data_loader(encoding, label):
         yield input_ids[start:end], attention_mask[start:end], torch.from_numpy(np.array(label[start:end]))
 
 
+def data_loader_valid(encoding, label):
+    input_ids = encoding['input_ids']
+    attention_mask = encoding['attention_mask']
+
+    batch_count = 0
+    while 1:
+        if batch_count * BATCH_SIZE + BATCH_SIZE < len(input_ids):
+            start = batch_count * BATCH_SIZE
+            end = start + BATCH_SIZE
+            batch_count += 1
+            yield input_ids[start:end], attention_mask[start:end], torch.from_numpy(np.array(label[start:end]))
+
+
 oce_train_loader = data_loader(oce_train_encodings, oce_train_label)
 oce_valid_loader = data_loader(oce_valid_encodings, oce_valid_label)
 
@@ -125,109 +138,103 @@ news_valid_loader = data_loader(news_valid_encodings, news_valid_label)
 oc_train_loader = data_loader(oc_train_encodings, oc_train_label)
 oc_valid_loader = data_loader(oc_valid_encodings, oc_valid_label)
 
-# if os.path.exists('bert.p'):
-#     print('************load model************')
-#     model = BertForMultiTaskWithWeight(num_labels1=7, num_labels2=15, num_labels3=3, device=device)
-#     model.to(device)
-# else:
-model = BertForMultiTask.from_pretrained('./bert', num_labels1=7, num_labels2=15, num_labels3=3)
+if os.path.exists('bert.p'):
+    print('************load model************')
+    model = BertForMultiTaskWithWeight(num_labels1=7, num_labels2=15, num_labels3=3, device=device)
+    model.to(device)
+else:
+    model = BertForMultiTask.from_pretrained('./bert', num_labels1=7, num_labels2=15, num_labels3=3)
 model.to(device)
 model.train()
-
-optim = AdamW(model.parameters(), lr=5e-5)
-loss_fct = nn.CrossEntropyLoss()
-
-
-def train_func(oce_train_loader, news_train_loader, oc_train_loader):
-    train_loss = 0
-    train_f1 = 0
-    pbar = tqdm(range(1000))
-    for _ in pbar:
-        optim.zero_grad()
-
-        # oce
-        batch = next(oce_train_loader)
-        input_ids = batch[0].to(device)
-        attention_mask = batch[1].to(device)
-        labels = batch[2].to(device)
-        outputs, bert, fc = model(input_ids, attention_mask=attention_mask, labels=labels, task='oce')
-        oce_loss = loss_fct(outputs.view(-1, 7), labels.view(-1))
-        oce_f1 = f1_score(labels.cpu().numpy(), outputs.argmax(dim=1).cpu().numpy(), average='macro')
-
-        # news
-        batch = next(news_train_loader)
-        input_ids = batch[0].to(device)
-        attention_mask = batch[1].to(device)
-        labels = batch[2].to(device)
-        outputs, bert, fc = model(input_ids, attention_mask=attention_mask, labels=labels, task='news')
-        news_loss = loss_fct(outputs.view(-1, 15), labels.view(-1))
-        news_f1 = f1_score(labels.cpu().numpy(), outputs.argmax(dim=1).cpu().numpy(), average='macro')
-
-        # oc
-        batch = next(oc_train_loader)
-        input_ids = batch[0].to(device)
-        attention_mask = batch[1].to(device)
-        labels = batch[2].to(device)
-        outputs, bert, fc = model(input_ids, attention_mask=attention_mask, labels=labels, task='oc')
-        oc_loss = loss_fct(outputs.view(-1, 3), labels.view(-1))
-        oc_f1 = f1_score(labels.cpu().numpy(), outputs.argmax(dim=1).cpu().numpy(), average='macro')
-
-        loss = oce_loss + news_loss + oc_loss
-
-        train_loss += loss.item()
-        loss.backward()
-        optim.step()
-
-        f1 = (oce_f1 + news_f1 + oc_f1) / 3
-
-        train_f1 += f1
-
-        pbar.update()
-        pbar.set_description(f'train oce_loss:{oce_loss.item()}, train oce_f1:{oce_f1},'
-                             f'train news_loss:{news_loss.item()}, train news_f1:{news_f1},'
-                             f'train oc_loss:{oc_loss.item()}, train oc_f1:{oc_f1},'
-                             f'train loss:{loss.item()}, train f1:{f1}')
-
-    return train_loss / len(oce_train_loader), train_f1 / len(oce_train_loader), bert, fc
-
-    # torch.save(bert, 'bert.p')
 
 
 def valid_func(valid_loader, task):
     valid_loss = 0
     valid_f1 = 0
-    for batch in tqdm(valid_loader):
+
+    steps = 5
+
+    for _ in tqdm(range(steps)):
+        batch = next(valid_loader)
         with torch.no_grad():
-            input_ids = batch['input_ids'].to(device)
-            attention_mask = batch['attention_mask'].to(device)
-            labels = batch['labels'].to(device)
-            loss, outputs, _, _ = model(input_ids, attention_mask=attention_mask, labels=labels, task=task)
+            input_ids = batch[0].to(device)
+            attention_mask = batch[1].to(device)
+            labels = batch[2].to(device)
+            outputs, _, _ = model(input_ids, attention_mask=attention_mask, labels=labels, task=task)
+            loss = loss_fct(outputs.view(200, -1), labels.view(-1))
             valid_loss += loss.item()
             valid_f1 += f1_score(labels.cpu().numpy(), outputs.argmax(dim=1).cpu().numpy(), average='macro')
 
-    return valid_loss / len(valid_loader), valid_f1 / len(valid_loader)
+    return valid_loss / steps, valid_f1 / steps
 
 
-min_valid_loss = [float('inf'), float('inf'), float('inf')]
-task_name = ['oce', 'news', 'oc']
-# task_name = ['news','oce',  'oc']
-for epoch in range(100):
-    print(f'************epoch {epoch + 1}************')
-    i = 0
+optim = AdamW(model.parameters(), lr=2e-5)
+loss_fct = nn.CrossEntropyLoss()
 
-    print(f'{task_name[i]} train')
-    train_loss, train_f1, bert, fc = train_func(oce_train_loader, news_train_loader, oc_train_loader)
-    print(f'{task_name[i]} train loss: {train_loss:.4f}, train f1: {train_f1:.4f}')
+train_loss = 0
+train_f1 = 0
+pbar = tqdm(range(1000))
 
-    # print(f'{task_name[i]} valid')
-    # valid_loss, valid_f1 = valid_func(valid_loader, task=task_name[i])
-    # print(f'{task_name[i]} valid loss: {valid_loss:.4f}, valid f1: {valid_f1:.4f}')
-    #
-    # if min_valid_loss[i] > valid_loss:
-    #     min_valid_loss[i] = valid_loss
-    #     torch.save(fc, f'fc{i + 1}.p')
-    #     print('save fc layer done')
-    #     torch.save(bert, f'bert.p')
-    #     print('save bert done')
+min_valid_loss = float('inf')
+for i in pbar:
+    optim.zero_grad()
 
-    i += 1
+    # oce
+    batch = next(oce_train_loader)
+    input_ids = batch[0].to(device)
+    attention_mask = batch[1].to(device)
+    labels = batch[2].to(device)
+    outputs, bert, fc1 = model(input_ids, attention_mask=attention_mask, labels=labels, task='oce')
+    oce_loss = loss_fct(outputs.view(-1, 7), labels.view(-1))
+    oce_f1 = f1_score(labels.cpu().numpy(), outputs.argmax(dim=1).cpu().numpy(), average='macro')
+
+    # news
+    batch = next(news_train_loader)
+    input_ids = batch[0].to(device)
+    attention_mask = batch[1].to(device)
+    labels = batch[2].to(device)
+    outputs, bert, fc2 = model(input_ids, attention_mask=attention_mask, labels=labels, task='news')
+    news_loss = loss_fct(outputs.view(-1, 15), labels.view(-1))
+    news_f1 = f1_score(labels.cpu().numpy(), outputs.argmax(dim=1).cpu().numpy(), average='macro')
+
+    # oc
+    batch = next(oc_train_loader)
+    input_ids = batch[0].to(device)
+    attention_mask = batch[1].to(device)
+    labels = batch[2].to(device)
+    outputs, bert, fc3 = model(input_ids, attention_mask=attention_mask, labels=labels, task='oc')
+    oc_loss = loss_fct(outputs.view(-1, 3), labels.view(-1))
+    oc_f1 = f1_score(labels.cpu().numpy(), outputs.argmax(dim=1).cpu().numpy(), average='macro')
+
+    loss = oce_loss + news_loss + oc_loss
+
+    train_loss += loss.item()
+    loss.backward()
+    optim.step()
+
+    f1 = (oce_f1 + news_f1 + oc_f1) / 3
+
+    train_f1 += f1
+
+    pbar.update()
+    pbar.set_description(f'oce_loss:{round(oce_loss.item(), 4)}, oce_f1:{round(oce_f1, 4)},'
+                         f'news_loss:{round(news_loss.item(), 4)}, news_f1:{round(news_f1, 4)},'
+                         f'oc_loss:{round(oc_loss.item(), 4)}, oc_f1:{round(oc_f1, 4)},'
+                         f'loss:{round(loss.item(), 4)}, f1:{round(f1, 4)}')
+
+    if i % 50 == 0:
+        oce_loss_v, oce_f1_v = valid_func(oce_valid_loader, 'oce')
+        news_loss_v, news_f1_v = valid_func(news_valid_loader, 'news')
+        oc_loss_v, oc_f1_v = valid_func(oc_valid_loader, 'oc')
+
+        loss_v = (oce_loss_v + news_loss_v + oc_loss_v) / 3
+        f1_v = (oce_f1_v + news_f1_v + oc_f1_v) / 3
+
+        print(f'valid loss:{loss_v}, valid f1:{f1_v}')
+
+        if loss_v < min_valid_loss:
+            min_valid_loss = loss_v
+            torch.save([bert, fc1, fc2, fc3], 'bert.p')
+            print('save model done')
+
+# train_func(oce_train_loader, news_train_loader, oc_train_loader)
