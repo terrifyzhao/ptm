@@ -2,6 +2,7 @@ from transformers import BertPreTrainedModel, BertModel
 import torch.nn as nn
 from transformers.file_utils import *
 import torch.nn.functional as F
+import torch
 
 
 class BertForMultiTaskWithWeight(nn.Module):
@@ -65,6 +66,23 @@ class BertForMultiTaskWithWeight(nn.Module):
             return logits3, self.bert, self.classifier3
 
 
+class InterpretationLayer(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.dense = nn.Linear(config.hidden_size, 1)
+
+    def forward(self, x):
+        # [bs, seq_len]
+        out = self.dense(x)
+        alpha = F.softmax(out, dim=1)
+        # [bs, seq_len,768] [bs, seq]
+        out = x * alpha
+        out = torch.sum(out, dim=1)
+
+        # out = sum(out, axis=1)
+        return out
+
+
 class BertForMultiTask(BertPreTrainedModel):
     def __init__(self, config, num_labels1, num_labels2, num_labels3):
         super().__init__(config)
@@ -74,6 +92,10 @@ class BertForMultiTask(BertPreTrainedModel):
 
         self.bert = BertModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.cls_dropout = nn.Dropout(0.1)
+
+        self.inter = InterpretationLayer(config)
+
         self.classifier1 = nn.Linear(config.hidden_size, num_labels1)
         self.classifier2 = nn.Linear(config.hidden_size, num_labels2)
         self.classifier3 = nn.Linear(config.hidden_size, num_labels3)
@@ -103,12 +125,17 @@ class BertForMultiTask(BertPreTrainedModel):
             output_hidden_states=output_hidden_states,
         )
 
-        pooled_output = outputs[1]
+        # pooled_output = outputs[1]
 
-        pooled_output = self.dropout(pooled_output)
+        out = self.inter(outputs[0])
+
+        pooled_output = self.dropout(out)
         logits1 = self.classifier1(pooled_output)
+        logits1 = self.cls_dropout(logits1)
         logits2 = self.classifier2(pooled_output)
+        logits2 = self.cls_dropout(logits2)
         logits3 = self.classifier3(pooled_output)
+        logits3 = self.cls_dropout(logits3)
 
         if task == 'oce':
             return logits1, self.bert, self.classifier1

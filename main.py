@@ -5,7 +5,7 @@ from sklearn.metrics import f1_score
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from transformers import AdamW
+from torch.optim import AdamW
 from model import BertForMultiTask, BertForMultiTaskWithWeight
 import os
 import torch.nn as nn
@@ -16,11 +16,11 @@ device = torch.device(f'cuda:{GPU_NUM}') if torch.cuda.is_available() else torch
 
 os.environ["CUDA_VISIBLE_DEVICES"] = f'{GPU_NUM}'
 
-size = 200000
-BATCH_SIZE = 80
+size = 2000000
+BATCH_SIZE = 70
 BERT_PATH = './bert_large'
-TEST_SIZE = 1600
-STEPS = 20
+TEST_SIZE = 1400
+STEPS = TEST_SIZE // BATCH_SIZE
 
 
 def read_oce_data():
@@ -170,7 +170,8 @@ def valid_func(valid_loader, task):
     return valid_loss / steps, valid_f1 / steps
 
 
-optim = AdamW(model.parameters(), lr=5e-5)
+optim = AdamW(model.parameters(), lr=5e-5, amsgrad=True)
+scheduler = torch.optim.lr_scheduler.StepLR(optim, step_size=STEPS, gamma=0.8)
 loss_fct = nn.CrossEntropyLoss()
 
 train_loss = 0
@@ -231,6 +232,8 @@ for i in pbar:
 
         loss_v = (oce_loss_v + news_loss_v + oc_loss_v) / 3
         f1_v = (oce_f1_v + news_f1_v + oc_f1_v) / 3
+
+        scheduler.step()
 
         print(f'oce_loss:{round(oce_loss.item(), 4)}, oce_f1:{round(oce_f1, 4)},'
               f'news_loss:{round(news_loss.item(), 4)}, news_f1:{round(news_f1, 4)},'
